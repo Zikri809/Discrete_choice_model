@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Transport Mode Choice Explorer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Averia+Serif+Libre:wght@400;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="page-shell">
+    <header class="hero">
+      <p class="eyebrow">Discrete Choice Model</p>
+      <h1>Transport Mode Choice Explorer</h1>
+      <p class="hero-copy">
+        Collect each respondent's ratings, capture their unique attribute priorities,
+        then turn the aggregated preferences into dynamic weights from 0 to 1.
+      </p>
+    </header>
+
+    <main class="layout">
+      <section class="panel setup-panel" id="setup-panel">
+        <div class="panel-header">
+          <h2>Survey Setup</h2>
+          <span class="panel-tag">GitHub Pages Ready</span>
+        </div>
+
+        <form id="setup-form" class="stack">
+          <label class="field">
+            <span>Number of respondents</span>
+            <input id="respondent-count" name="respondent-count" type="number" min="1" step="1" value="1" required>
+          </label>
+
+          <div class="legend-card">
+            <h3>Input Rules</h3>
+            <p>Each respondent follows the same flow before moving to the next person:</p>
+            <ol>
+              <li>Rate all transport methods on a 1 to 5 scale.</li>
+              <li>Rank the four attributes using each rank from 1 to 4 exactly once.</li>
+            </ol>
+            <p><strong>Cost</strong> is treated as a penalty in the utility model. The other attributes are benefits.</p>
+          </div>
+
+          <button class="primary-button" type="submit">Start Survey</button>
+        </form>
+      </section>
+
+      <section class="panel survey-panel hidden" id="survey-panel" aria-live="polite">
+        <div class="panel-header">
+          <div>
+            <p class="section-label">Current Respondent</p>
+            <h2 id="survey-title">Respondent 1</h2>
+          </div>
+          <div class="progress-wrap">
+            <span id="progress-text">1 / 1</span>
+            <div class="progress-track" aria-hidden="true">
+              <div class="progress-fill" id="progress-fill"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="flash-message" id="form-message"></div>
+
+        <form id="survey-form" class="stack">
+          <section class="subpanel">
+            <div class="subpanel-header">
+              <h3>Part 1: Transport Method Ratings</h3>
+              <p>Rate each method for every attribute on a 1 to 5 scale.</p>
+            </div>
+            <div class="table-wrap" id="ratings-table-wrap"></div>
+          </section>
+
+          <section class="subpanel">
+            <div class="subpanel-header">
+              <h3>Part 2: Attribute Importance Rankings</h3>
+              <p>Use each rank from 1 to 4 once only. 1 = least important, 4 = most important.</p>
+            </div>
+            <div class="ranking-grid" id="rankings-wrap"></div>
+          </section>
+
+          <button class="primary-button" id="survey-submit" type="submit">Save Respondent</button>
+        </form>
+      </section>
+
+      <section class="panel results-panel hidden" id="results-panel">
+        <div class="panel-header">
+          <div>
+            <p class="section-label">Model Output</p>
+            <h2>Aggregated Results</h2>
+          </div>
+          <button class="secondary-button" id="restart-button" type="button">Start New Survey</button>
+        </div>
+
+        <div class="results-grid">
+          <section class="result-card">
+            <h3>Dynamic Weights</h3>
+            <div id="weight-cards" class="metric-grid"></div>
+          </section>
+
+          <section class="result-card">
+            <h3>Choice Probabilities</h3>
+            <div id="probability-bars" class="bar-list"></div>
+          </section>
+        </div>
+
+        <div class="results-grid wide">
+          <section class="result-card">
+            <h3>Average Perception Scores</h3>
+            <div class="table-wrap" id="average-scores-table"></div>
+          </section>
+
+          <section class="result-card">
+            <h3>Utilities</h3>
+            <div id="utility-cards" class="metric-grid utility-grid"></div>
+          </section>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
