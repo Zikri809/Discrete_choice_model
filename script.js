@@ -12,10 +12,13 @@ const attributeNames = [
   "Driving Experience",
 ];
 
+const STORAGE_KEY = "transport-mode-choice-state";
+
 const state = {
   respondentCount: 0,
   currentRespondentIndex: 0,
   respondents: [],
+  currentDraft: createEmptyDraft(),
 };
 
 const setupForm = document.getElementById("setup-form");
@@ -53,6 +56,8 @@ setupForm.addEventListener("submit", (event) => {
   state.respondentCount = respondentCount;
   state.currentRespondentIndex = 0;
   state.respondents = [];
+  state.currentDraft = createEmptyDraft();
+  persistState();
 
   setupPanel.classList.add("hidden");
   resultsPanel.classList.add("hidden");
@@ -84,6 +89,8 @@ surveyForm.addEventListener("submit", (event) => {
 
   state.respondents.push({ ratings, rankings });
   state.currentRespondentIndex += 1;
+  state.currentDraft = createEmptyDraft();
+  persistState();
 
   if (state.currentRespondentIndex < state.respondentCount) {
     renderSurveyForm();
@@ -93,10 +100,11 @@ surveyForm.addEventListener("submit", (event) => {
   renderResults();
 });
 
+surveyForm.addEventListener("change", handleSurveyFieldChange);
+
 restartButton.addEventListener("click", () => {
-  state.respondentCount = 0;
-  state.currentRespondentIndex = 0;
-  state.respondents = [];
+  resetState();
+  clearPersistedState();
 
   resultsPanel.classList.add("hidden");
   surveyPanel.classList.add("hidden");
@@ -116,6 +124,7 @@ function renderSurveyForm() {
 
   ratingsTableWrap.innerHTML = buildRatingsTable();
   rankingsWrap.innerHTML = buildRankingsForm();
+  syncRankingSelectStates();
 }
 
 function buildRatingsTable() {
@@ -128,10 +137,11 @@ function buildRatingsTable() {
       const selects = attributeNames
         .map((attribute, attributeIndex) => {
           const inputName = `rating-${modeIndex}-${attributeIndex}`;
+          const selectedValue = state.currentDraft.ratings[modeIndex][attributeIndex];
           return `
             <td>
               <label class="sr-only" for="${inputName}">${mode} - ${attribute}</label>
-              ${buildSelect(inputName, 1, 5)}
+              ${buildSelect(inputName, 1, 5, selectedValue)}
             </td>
           `;
         })
@@ -167,7 +177,7 @@ function buildRankingsForm() {
         <article class="ranking-card">
           <label for="${inputName}">
             <span>${attribute}</span>
-            ${buildSelect(inputName, 1, attributeNames.length)}
+            ${buildRankingSelect(inputName, attributeIndex)}
           </label>
         </article>
       `;
@@ -175,14 +185,39 @@ function buildRankingsForm() {
     .join("");
 }
 
-function buildSelect(id, min, max) {
+function buildSelect(id, min, max, selectedValue = "") {
   const options = ['<option value="">Select</option>'];
 
   for (let value = min; value <= max; value += 1) {
-    options.push(`<option value="${value}">${value}</option>`);
+    const selectedAttribute = String(selectedValue) === String(value) ? " selected" : "";
+    options.push(`<option value="${value}"${selectedAttribute}>${value}</option>`);
   }
 
-  return `<select id="${id}" name="${id}" required>${options.join("")}</select>`;
+  return `<select id="${id}" name="${id}">${options.join("")}</select>`;
+}
+
+function buildRankingSelect(id, attributeIndex) {
+  const selectedValue = state.currentDraft.rankings[attributeIndex];
+  const usedRankings = new Set(
+    state.currentDraft.rankings
+      .filter((value, index) => index !== attributeIndex && value !== "")
+      .map((value) => String(value))
+  );
+
+  const options = ['<option value="">Select</option>'];
+
+  for (let value = 1; value <= attributeNames.length; value += 1) {
+    const valueText = String(value);
+    const selectedAttribute = String(selectedValue) === valueText ? " selected" : "";
+    const disabledAttribute =
+      selectedAttribute === "" && usedRankings.has(valueText) ? " disabled" : "";
+
+    options.push(
+      `<option value="${valueText}"${selectedAttribute}${disabledAttribute}>${valueText}</option>`
+    );
+  }
+
+  return `<select id="${id}" name="${id}">${options.join("")}</select>`;
 }
 
 function readRatingsFromForm() {
@@ -226,6 +261,13 @@ function readRankingsFromForm() {
 }
 
 function renderResults() {
+  if (state.respondents.length === 0) {
+    formMessage.textContent = "Add at least one completed respondent before calculating results.";
+    surveyPanel.classList.remove("hidden");
+    resultsPanel.classList.add("hidden");
+    return;
+  }
+
   const aggregatedPreferenceScores = attributeNames.map((_, attributeIndex) =>
     state.respondents.reduce(
       (total, respondent) => total + respondent.rankings[attributeIndex],
@@ -307,6 +349,8 @@ function renderResults() {
 
   surveyPanel.classList.add("hidden");
   resultsPanel.classList.remove("hidden");
+  persistState();
+  resultsPanel.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function buildAverageScoresTable(averageScores) {
@@ -352,3 +396,231 @@ function computeSoftmax(values) {
   const denominator = exponents.reduce((sum, value) => sum + value, 0);
   return exponents.map((value) => value / denominator);
 }
+
+function createEmptyDraft() {
+  return {
+    ratings: modeNames.map(() => attributeNames.map(() => "")),
+    rankings: attributeNames.map(() => ""),
+  };
+}
+
+function resetState() {
+  state.respondentCount = 0;
+  state.currentRespondentIndex = 0;
+  state.respondents = [];
+  state.currentDraft = createEmptyDraft();
+}
+
+function handleSurveyFieldChange(event) {
+  const { id, value } = event.target;
+
+  if (!id) {
+    return;
+  }
+
+  if (id.startsWith("rating-")) {
+    const [, modeIndexText, attributeIndexText] = id.split("-");
+    const modeIndex = Number.parseInt(modeIndexText, 10);
+    const attributeIndex = Number.parseInt(attributeIndexText, 10);
+
+    if (Number.isInteger(modeIndex) && Number.isInteger(attributeIndex)) {
+      state.currentDraft.ratings[modeIndex][attributeIndex] = value;
+      persistState();
+    }
+
+    return;
+  }
+
+  if (id.startsWith("ranking-")) {
+    const [, attributeIndexText] = id.split("-");
+    const attributeIndex = Number.parseInt(attributeIndexText, 10);
+
+    if (Number.isInteger(attributeIndex)) {
+      state.currentDraft.rankings[attributeIndex] = value;
+      syncRankingSelectStates(attributeIndex);
+      persistState();
+    }
+  }
+}
+
+function syncRankingSelectStates(changedAttributeIndex = null) {
+  state.currentDraft.rankings = dedupeRankings(state.currentDraft.rankings, changedAttributeIndex);
+
+  for (let attributeIndex = 0; attributeIndex < attributeNames.length; attributeIndex += 1) {
+    const select = document.getElementById(`ranking-${attributeIndex}`);
+    if (!select) {
+      continue;
+    }
+
+    const currentValue = state.currentDraft.rankings[attributeIndex];
+    const unavailableValues = new Set(
+      state.currentDraft.rankings
+        .filter((value, index) => index !== attributeIndex && value !== "")
+        .map((value) => String(value))
+    );
+
+    Array.from(select.options).forEach((option) => {
+      if (option.value === "") {
+        option.disabled = false;
+        return;
+      }
+
+      option.disabled = option.value !== currentValue && unavailableValues.has(option.value);
+    });
+
+    select.value = currentValue;
+  }
+}
+
+function persistState() {
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (error) {
+    console.warn("Unable to persist survey state.", error);
+  }
+}
+
+function clearPersistedState() {
+  try {
+    window.localStorage.removeItem(STORAGE_KEY);
+  } catch (error) {
+    console.warn("Unable to clear persisted survey state.", error);
+  }
+}
+
+function restorePersistedState() {
+  try {
+    const savedState = window.localStorage.getItem(STORAGE_KEY);
+    if (!savedState) {
+      return;
+    }
+
+    const parsedState = JSON.parse(savedState);
+    if (!isValidPersistedState(parsedState)) {
+      clearPersistedState();
+      return;
+    }
+
+    state.respondentCount = parsedState.respondentCount;
+    state.currentRespondentIndex = parsedState.currentRespondentIndex;
+    state.respondents = parsedState.respondents;
+    state.currentDraft = parsedState.currentDraft;
+    state.currentDraft.rankings = dedupeRankings(state.currentDraft.rankings);
+
+    document.getElementById("respondent-count").value = String(state.respondentCount);
+
+    if (state.currentRespondentIndex >= state.respondentCount) {
+      setupPanel.classList.add("hidden");
+      surveyPanel.classList.add("hidden");
+      resultsPanel.classList.remove("hidden");
+      renderResults();
+      return;
+    }
+
+    if (state.respondentCount > 0) {
+      setupPanel.classList.add("hidden");
+      resultsPanel.classList.add("hidden");
+      surveyPanel.classList.remove("hidden");
+      renderSurveyForm();
+    }
+  } catch (error) {
+    console.warn("Unable to restore survey state.", error);
+    clearPersistedState();
+  }
+}
+
+function isValidPersistedState(candidate) {
+  return (
+    candidate &&
+    Number.isInteger(candidate.respondentCount) &&
+    candidate.respondentCount >= 0 &&
+    Number.isInteger(candidate.currentRespondentIndex) &&
+    candidate.currentRespondentIndex >= 0 &&
+    candidate.currentRespondentIndex <= candidate.respondentCount &&
+    Array.isArray(candidate.respondents) &&
+    candidate.respondents.length === candidate.currentRespondentIndex &&
+    candidate.respondents.every(isValidRespondent) &&
+    isValidDraft(candidate.currentDraft)
+  );
+}
+
+function isValidRespondent(candidate) {
+  return (
+    candidate &&
+    Array.isArray(candidate.ratings) &&
+    candidate.ratings.length === modeNames.length &&
+    candidate.ratings.every(
+      (row) =>
+        Array.isArray(row) &&
+        row.length === attributeNames.length &&
+        row.every((value) => Number.isInteger(value) && value >= 1 && value <= 5)
+    ) &&
+    Array.isArray(candidate.rankings) &&
+    candidate.rankings.length === attributeNames.length &&
+    candidate.rankings.every(
+      (value) => Number.isInteger(value) && value >= 1 && value <= attributeNames.length
+    )
+  );
+}
+
+function isValidDraft(candidate) {
+  return (
+    candidate &&
+    Array.isArray(candidate.ratings) &&
+    candidate.ratings.length === modeNames.length &&
+    candidate.ratings.every(
+      (row) =>
+        Array.isArray(row) &&
+        row.length === attributeNames.length &&
+        row.every((value) => value === "" || isValidScoreValue(value, 5))
+    ) &&
+    Array.isArray(candidate.rankings) &&
+    candidate.rankings.length === attributeNames.length &&
+    candidate.rankings.every(
+      (value) => value === "" || isValidScoreValue(value, attributeNames.length)
+    )
+  );
+}
+
+function isValidScoreValue(value, maxValue) {
+  const numericValue = Number.parseInt(value, 10);
+  return Number.isInteger(numericValue) && numericValue >= 1 && numericValue <= maxValue;
+}
+
+function dedupeRankings(rankings, preferredIndex = null) {
+  const usedRankings = new Set();
+  const normalizedRankings = rankings.map((value) => (value === "" ? "" : String(value)));
+
+  if (preferredIndex !== null) {
+    const preferredValue = normalizedRankings[preferredIndex];
+
+    if (preferredValue !== "") {
+      usedRankings.add(preferredValue);
+
+      for (let index = 0; index < normalizedRankings.length; index += 1) {
+        if (index !== preferredIndex && normalizedRankings[index] === preferredValue) {
+          normalizedRankings[index] = "";
+        }
+      }
+    }
+  }
+
+  return normalizedRankings.map((value, index) => {
+    if (value === "") {
+      return "";
+    }
+
+    if (preferredIndex !== null && index === preferredIndex) {
+      return value;
+    }
+
+    if (usedRankings.has(value)) {
+      return "";
+    }
+
+    usedRankings.add(value);
+    return value;
+  });
+}
+
+restorePersistedState();
